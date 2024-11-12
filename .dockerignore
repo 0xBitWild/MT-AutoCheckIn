@@ -1,0 +1,12 @@
+.idea
+.vscode
+.env
+.venv
+.flake8
+.python-version
+
+*.log
+*.json
+
+docker-compose.dev.yml
+kubernetes-manifests/deployment.dev.yaml

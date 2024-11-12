@@ -1,0 +1,43 @@
+services:
+
+  mt_autocheckin:
+    image: bitwild/mt-autocheckin:latest
+    container_name: mt-autocheckin
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE}
+
+    restart: always
+    volumes:
+      - /etc/timezone:/etc/timezone
+      - /etc/hosts:/etc/hosts
+    environment:
+      - TZ=Asia/Shanghai
+
+      # M-Team 账号信息
+      - MTEAM_USERNAME=your_mteam_username
+      - MTEAM_PASSWORD=your_mteam_password
+      - MTEAM_TOTP_SECRET=your_mteam_totp_secret  
+
+      # SMTP 邮件通知
+      - SMTP_HOST=your_smtp_host
+      - SMTP_PORT=your_smtp_port
+      - SMTP_USERNAME=your_smtp_username
+      - SMTP_PASSWORD=your_smtp_password
+
+      # Telegram 通知
+      - TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+      - TELEGRAM_CHAT_ID=your_telegram_chat_id
+
+      # 通知类型
+      - NOTIFY_TYPE=smtp # smtp, telegram, none
+      - NOTIFY_EMAIL=your_notify_email
+
+    command:   ["sh", "-c", "python MT-AutoCheckIn.py"]
+    healthcheck:
+      test: [ "CMD", "pgrep", "-f", "python MT-AutoCheckIn.py" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
