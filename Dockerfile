@@ -3,8 +3,6 @@ FROM python:3.12.7-bookworm as base
 
 ARG BUILD_DATE
 
-ENV BUILD_DATE ${BUILD_DATE}
-
 # 更新apt包管理器并安装必要的依赖
 RUN apt update -y && \
     apt install -y --no-install-recommends bash build-essential libffi-dev libssl-dev && \
@@ -28,15 +26,14 @@ RUN playwright install chromium && \
 
 FROM base
 
-LABEL build_date=${BUILD_DATE}
+LABEL maintainer="0xBitwild" \
+      build_date=${BUILD_DATE}
 
+# 设置工作目录
 WORKDIR /app
 
 # 复制目录到镜像中
 COPY . .
-
-# 设置工作目录
-WORKDIR /app
 
 # 设置入口点
 CMD ["sh", "-c", "python MT-AutoCheckIn.py"]

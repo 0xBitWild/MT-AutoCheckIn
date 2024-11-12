@@ -7,13 +7,14 @@ import random
 import logging
 import smtplib
 import asyncio
+from typing import Any
 from email.mime.text import MIMEText
 from pathlib import Path
-
 
 import pyotp
 import requests
 import schedule
+import humanize
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Page
 from playwright.async_api import (TimeoutError as PlaywrightTimeoutError,
@@ -47,20 +48,52 @@ class Notifier:
         self.smtp_config = None
         self.telegram_config = None
 
-    def configure_smtp(self, host, port, username, password):
+        self._configure()
+
+    def _configure(self):
+        """配置通知方式。"""
+
+        notify_type = os.environ.get('NOTIFY_TYPE')
+
+        if notify_type == 'smtp':
+            self._configure_smtp()
+        elif notify_type == 'telegram':
+            self._configure_telegram()
+        else:
+            logger.warning("未设置通知类型，将不发送通知")
+
+    def _configure_smtp(self):
         """配置SMTP服务器信息。"""
+
+        if not all([os.environ.get('SMTP_HOST'),
+                    os.environ.get('SMTP_PORT'),
+                    os.environ.get('SMTP_USERNAME'),
+                    os.environ.get('SMTP_PASSWORD')]
+                   ):
+            raise ValueError(
+                "请设置所有必要的环境变量：SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD"
+                )
+
         self.smtp_config = {
-            'host': host,
-            'port': port,
-            'username': username,
-            'password': password
+            'host': os.environ.get('SMTP_HOST'),
+            'port': os.environ.get('SMTP_PORT'),
+            'username': os.environ.get('SMTP_USERNAME'),
+            'password': os.environ.get('SMTP_PASSWORD')
         }
 
-    def configure_telegram(self, bot_token, chat_id):
+    def _configure_telegram(self):
         """配置Telegram机器人信息。"""
+
+        if not all(
+            [os.environ.get('TELEGRAM_BOT_TOKEN'),
+             os.environ.get('TELEGRAM_CHAT_ID')]):
+            raise ValueError(
+                "请设置所有必要的环境变量：TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID"
+                )
+
         self.telegram_config = {
-            'bot_token': bot_token,
-            'chat_id': chat_id
+            'bot_token': os.environ.get('TELEGRAM_BOT_TOKEN'),
+            'chat_id': os.environ.get('TELEGRAM_CHAT_ID')
         }
 
     def send_smtp(self, subject, message, to_email):
@@ -79,8 +112,11 @@ class Notifier:
                 int(self.smtp_config['port']),
                 timeout=30
             ) as server:
-                server.login(self.smtp_config['username'], self.smtp_config['password'])
-                logger.info("SMTP登录成功")
+                server.login(
+                    self.smtp_config['username'],
+                    self.smtp_config['password']
+                    )
+                # logger.info("SMTP登录成功")
                 server.send_message(msg)
                 logger.info("SMTP邮件发送成功")
                 server.quit()
@@ -113,56 +149,6 @@ class Notifier:
         if self.telegram_config:
             self.send_telegram(message)
 
-    @classmethod
-    def get_notifier(cls):
-        """获取通知发送器实例。"""
-        notify_type = os.environ.get('NOTIFY_TYPE')
-
-        notifier = cls()
-
-        if notify_type == 'smtp':
-
-            if not all([os.environ.get('SMTP_HOST'),
-                        os.environ.get('SMTP_PORT'),
-                        os.environ.get('SMTP_USERNAME'),
-                        os.environ.get('SMTP_PASSWORD')]
-                       ):
-                raise ValueError("请设置所有必要的环境变量：SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD")
-
-            notifier.configure_smtp(
-                os.environ.get('SMTP_HOST'),
-                os.environ.get('SMTP_PORT'),
-                os.environ.get('SMTP_USERNAME'),
-                os.environ.get('SMTP_PASSWORD')
-            )
-
-            notifier.send_notification(message='SMTP配置成功', subject="[MT-AutoCheckIn] SMTP配置成功")
-
-            return notifier
-
-        elif notify_type == 'telegram':
-
-            if not all([os.environ.get('TELEGRAM_BOT_TOKEN'), os.environ.get('TELEGRAM_CHAT_ID')]):
-                raise ValueError("请设置所有必要的环境变量：TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
-
-            notifier.configure_telegram(
-                os.environ.get('TELEGRAM_BOT_TOKEN'),
-                os.environ.get('TELEGRAM_CHAT_ID')
-            )
-
-            notifier.send_notification(message='[MT-AutoCheckIn] Telegram配置成功\n\nTelegram配置成功')
-
-            return notifier
-
-        elif notify_type == 'none':
-            notifier = None
-            logger.warning("未设置通知类型，将不发送通知")
-
-            return notifier
-
-        else:
-            raise ValueError("通知类型必须是 'smtp' 或 'telegram' 或 'none'")
-
 
 class LocalStorageManager:
     """Local Storage管理类。"""
@@ -177,7 +163,9 @@ class LocalStorageManager:
     async def set_value(self, key: str, value: str) -> None:
         """设置Local Storage中的值。"""
         escaped_value = json.dumps(value)
-        await self.page.evaluate(f'localStorage.setItem("{key}", {escaped_value})')
+        await self.page.evaluate(
+            f'localStorage.setItem("{key}", {escaped_value})'
+            )
 
     async def remove_value(self, key: str) -> None:
         """删除Local Storage中的指定键值对。"""
@@ -189,9 +177,16 @@ class LocalStorageManager:
 
     async def save_to_file(self, filename: str) -> None:
         """将Local Storage保存到本地json文件。"""
-        storage_data = await self.page.evaluate('() => JSON.stringify(localStorage)')
+        storage_data = await self.page.evaluate(
+            '() => JSON.stringify(localStorage)'
+            )
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(json.loads(storage_data), f, ensure_ascii=False, indent=4)
+            json.dump(
+                json.loads(storage_data),
+                f,
+                ensure_ascii=False,
+                indent=4
+                )
 
     async def load_from_file(self, filename: str) -> None:
         """从本地json文件加载数据到Local Storage。"""
@@ -219,22 +214,24 @@ class MTeamSpider:
 
     def __init__(self) -> None:
 
-        self.localstorage_file = Path(__file__).parent / 'mteam_localstorage.json'
-        self.username = os.environ.get('MTEAM_USERNAME')
-        self.password = os.environ.get('MTEAM_PASSWORD')
-        self.totp_secret = os.environ.get('MTEAM_TOTP_SECRET')
+        self.localstorage_file: Path = Path(__file__).parent / 'mteam_localstorage.json'
+        self.username: str = os.environ.get('MTEAM_USERNAME', '')
+        self.password: str = os.environ.get('MTEAM_PASSWORD', '')
+        self.totp_secret: str = os.environ.get('MTEAM_TOTP_SECRET', '')
 
-        self.profile_api_url = 'https://api2.m-team.cc/api/member/profile'
-        self.profile_json = {}
+        self.profile_api_endpoint: str = '/api/member/profile'
+        self.profile_json: dict[str, Any] = {}
 
-        self.notify_subject_prefix = '[MT-AutoCheckIn] '
+        self.notify_subject_prefix: str = '[MT-AutoCheckIn] '
 
         if not all([self.username,
                     self.password,
                     self.totp_secret]):
-            raise ValueError("请设置所有必要的环境变量：MTEAM_USERNAME, MTEAM_PASSWORD, MTEAM_TOTP_SECRET")
+            raise ValueError(
+                "请设置所有必要的环境变量：MTEAM_USERNAME, MTEAM_PASSWORD, MTEAM_TOTP_SECRET"
+                )
 
-        self.notifier = Notifier.get_notifier()
+        self.notifier: Notifier = Notifier()
 
     def _get_captcha_code(self) -> str:
 
@@ -246,23 +243,48 @@ class MTeamSpider:
     def _parse_profile_json(self) -> str:
         """解析API响应数据。"""
 
-        message = f'用户ID: {self.profile_json.get("data").get("id")}\n'
-        message += f'用户名: {self.profile_json.get("data").get("username")}\n'
-        message += f'用户Email: {self.profile_json.get("data").get("email")}\n'
-        message += f'登录IP: {self.profile_json.get("data").get("ip")}\n'
-        message += f'创建时间: {self.profile_json.get("data").get("createdDate")}\n'
-        message += f'登录时间: {self.profile_json.get("data").get("lastModifiedDate")}\n'
+        data: dict[str, Any] | None = self.profile_json.get('data')
+
+        if not data:
+            return '获取到的数据为空'
+
+        message = f'用户ID: {data.get("id")}\n'
+        message += f'用户名: {data.get("username")}\n'
+        message += f'用户Email: {data.get("email")}\n'
+        message += f'登录IP: {data.get("ip")}\n'
+        message += f'账户创建时间: {data.get("createdDate")}\n'
+        message += f'账户更新时间: {data.get("lastModifiedDate")}\n'
+
+        member_status: dict[str, Any] | None = data.get('memberStatus')
+        if not member_status:
+            message += '会员状态数据为空\n'
+        else:
+            message += f'会员创建时间: {member_status.get("createdDate")}\n'
+            message += f'会员更新时间: {member_status.get("lastModifiedDate")}\n'
+            message += f'会员最新登录时间: {member_status.get("lastLogin")}\n'
+            message += f'会员最新浏览时间: {member_status.get("lastBrowse")}\n'
+
+        member_count: dict[str, Any] | None = data.get('memberCount')
+        if not member_count:
+            message += '会员统计数据为空\n'
+        else:
+            uploaded = humanize.naturalsize(member_count.get('uploaded', 0), binary=True)
+            downloaded = humanize.naturalsize(member_count.get('downloaded', 0), binary=True)
+
+            message += f'上传量: {uploaded}\n'
+            message += f'下载量: {downloaded}\n'
+            message += f'魔力值: {member_count.get("bonus")}\n'
+            message += f'分享率: {member_count.get("shareRate")}\n'
 
         return message
 
-    async def intercept_request(self, route, request):
+    async def intercept_profile_request(self, route, request):
         """拦截请求并处理API响应。"""
 
-        # logger.info("拦截到请求: %s", request.url)
-        # logger.info("期望的URL: %s", self.profile_api_url)
+        logger.info("拦截到请求: %s", request.url)
 
-        if self.profile_api_url == request.url:
-            # logger.info("成功匹配到目标请求: %s", request.url)
+        if request.url.endswith(self.profile_api_endpoint):
+            logger.info("成功匹配到目标请求: %s", request.url)
             try:
                 response = await route.fetch()
                 json_data = await response.json()
@@ -279,24 +301,26 @@ class MTeamSpider:
                                     local_storage_manager: LocalStorageManager
                                     ) -> None:
         """使用保存的 LocalStorage 数据尝试登录 M-Team。"""
-        try:
-            # 在导航前设置请求拦截
-            await page.route(self.profile_api_url, self.intercept_request)
-            logger.info("请求拦截设置完成")
 
+        logger.info('开始通过LocalStorage登录')
+
+        try:
             # 加载LocalStorage
             await local_storage_manager.load_from_file(str(self.localstorage_file))
 
             # 刷新页面
             await page.reload(timeout=60000)
+
+            # 等待页面加载完成
             await page.wait_for_load_state('networkidle', timeout=60000)
+            await page.wait_for_timeout(timeout=60000)
 
             # 登录状态检查
             is_logged_in = (
                 page.url == 'https://kp.m-team.cc/index' and
                 self.profile_json and
                 self.profile_json.get('data') and
-                self.profile_json.get('data').get('username') == self.username
+                self.profile_json.get('data').get('username') == self.username  # type: ignore
             )
 
             if is_logged_in:
@@ -315,21 +339,18 @@ class MTeamSpider:
             logger.warning('通过LocalStorage登录失败')
             raise LocalStorageLoginError('通过LocalStorage登录失败')
 
-        except (PlaywrightError, LocalStorageLoginError) as e:
+        except PlaywrightError as e:
             logger.error('通过LocalStorage登录时发生错误: %s', str(e))
-            raise LocalStorageLoginError(str(e)) from e
-        finally:
-            await page.unroute(self.profile_api_url)
 
     async def login_by_password(self,
                                 page: Page,
                                 local_storage_manager: LocalStorageManager
                                 ) -> None:
         """使用用户名和密码登录 M-Team。"""
+
+        logger.info('开始通过用户名密码登录')
+
         try:
-            # 在导航前设置请求拦截
-            await page.route(self.profile_api_url, self.intercept_request)
-            logger.info("请求拦截设置完成")
 
             if page.url != 'https://kp.m-team.cc/login':
                 # 访问登录页
@@ -339,14 +360,14 @@ class MTeamSpider:
             await page.wait_for_load_state('networkidle', timeout=60000)  # 60秒超时
 
             # 输入用户名/密码
-            await page.locator('button[type="submit"]').wait_for()
+            await page.locator('button[type="submit"]').wait_for(timeout=60000)
             await page.locator('input[id="username"]').fill(self.username)
             await page.locator('input[id="password"]').fill(self.password)
             await page.locator('button[type="submit"]').click()
 
             try:
                 # 等待2FA页面加载完成
-                await page.locator('input[id="otpCode"]').wait_for()
+                await page.locator('input[id="otpCode"]').wait_for(timeout=60000)
 
                 # 获取并输入2FA验证码
                 captcha_code = self._get_captcha_code()
@@ -355,7 +376,7 @@ class MTeamSpider:
 
                 # 等待页面加载完成
                 await page.wait_for_load_state('networkidle', timeout=60000)  # 60秒超时
-                await page.wait_for_timeout(5000)
+                await page.wait_for_timeout(timeout=60000)
 
             except PlaywrightTimeoutError as e:
                 logger.warning('处理2FA时发生超时错误: %s', str(e))
@@ -367,7 +388,7 @@ class MTeamSpider:
                 page.url == 'https://kp.m-team.cc/index' and
                 self.profile_json and
                 self.profile_json.get('data') and
-                self.profile_json.get('data').get('username') == self.username
+                self.profile_json.get('data').get('username') == self.username  # type: ignore
             )
 
             if is_logged_in:
@@ -378,27 +399,17 @@ class MTeamSpider:
                     subject=f'{self.notify_subject_prefix}登录成功'
                     )
 
-                # 如果文件存在，则删除
-                if self.localstorage_file.exists():
-                    self.localstorage_file.unlink()
-
                 # 保存localstorage到文件
                 await local_storage_manager.save_to_file(str(self.localstorage_file))
                 logger.info('已保存LocalStorage到文件')
                 return
 
-            self.notifier.send_notification(
-                message='通过用户名密码登录失败',
-                subject=f'{self.notify_subject_prefix}登录失败'
-            )
-            logger.error('通过用户名密码登录失败')
+            logger.warning('通过用户名密码登录失败')
             raise PasswordLoginError('通过用户名密码登录失败')
 
-        except (PlaywrightError, PasswordLoginError) as e:
+        except PlaywrightError as e:
             logger.error('通过用户名密码登录时发生错误: %s', str(e))
-            raise PasswordLoginError(str(e)) from e
-        finally:
-            await page.unroute(self.profile_api_url)
+            raise PlaywrightError(f'通过用户名密码登录时发生错误: {str(e)}') from e
 
     async def check_in(self):
         """执行M-Team自动签到流程。"""
@@ -410,20 +421,48 @@ class MTeamSpider:
         time.sleep(random_delay)
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
+
+            # 启动浏览器
+            browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page()
 
+            # 设置请求拦截
+            await page.route(f"**{self.profile_api_endpoint}", self.intercept_profile_request)
+            logger.info("请求拦截设置完成")
+
+            # 访问主页
+            await page.goto('https://kp.m-team.cc/', timeout=60000)
+            await page.wait_for_load_state('networkidle', timeout=60000)
+
+            # 初始化LocalStorage管理器
+            local_storage_manager = LocalStorageManager(page)
+
             try:
-                await page.goto('https://kp.m-team.cc/')
-                await page.wait_for_load_state('networkidle')
-
-                local_storage_manager = LocalStorageManager(page)
-
                 try:
+                    # 尝试通过LocalStorage登录
                     await self.login_by_localstorage(page, local_storage_manager)
                 except LocalStorageLoginError:
-                    await self.login_by_password(page, local_storage_manager)
+                    # 尝试通过用户名密码登录
+                    logger.warning('通过LocalStorage登录失败，尝试通过用户名密码登录')
+                    try:
+                        await self.login_by_password(page, local_storage_manager)
+                    except PasswordLoginError:
+                        logger.error('通过用户名密码登录失败，即将发送通知')
+                        self.notifier.send_notification(
+                            message='通过用户名密码登录失败',
+                            subject=f'{self.notify_subject_prefix}登录失败'
+                        )
+                        raise  # 可选：向上传递异常
+            except PlaywrightError as e:
+                logger.error('签到时发生Playwright错误: %s', str(e))
+                self.notifier.send_notification(
+                    message=f'签到时发生Playwright错误: {str(e)}',
+                    subject=f'{self.notify_subject_prefix}登录失败'
+                )
+            except KeyboardInterrupt:
+                logger.info('用户终止运行')
             finally:
+                await page.unroute(f"**{self.profile_api_endpoint}")
                 await page.close()
                 await browser.close()
 
@@ -431,6 +470,11 @@ class MTeamSpider:
         """定时签到。"""
 
         logger.info('定时签到任务开始...')
+
+        self.notifier.send_notification(
+            message='定时签到任务开始',
+            subject="[MT-AutoCheckIn] 定时签到任务开始"
+        )
 
         # 生成9:00到12:00之间的随机时间
         random_hour = random.randint(9, 11)
