@@ -59,6 +59,8 @@ class Notifier:
             self._configure_smtp()
         elif notify_type == 'telegram':
             self._configure_telegram()
+        elif notify_type == 'feishu':
+            self._configure_feishu()
         else:
             logger.warning("未设置通知类型，将不发送通知")
 
@@ -95,6 +97,16 @@ class Notifier:
             'bot_token': os.environ.get('TELEGRAM_BOT_TOKEN'),
             'chat_id': os.environ.get('TELEGRAM_CHAT_ID')
         }
+        
+    def _configure_feishu(self):
+        """配置飞书机器人信息。"""
+
+        if not os.environ.get('FEISHU_BOT_TOKEN'):
+            raise ValueError("请设置必要的环境变量：FEISHU_BOT_TOKEN")
+        self.feishu_config = {
+            'bot_token': os.environ.get('FEISHU_BOT_TOKEN')
+        }
+        
 
     def send_smtp(self, subject, message, to_email):
         """通过SMTP发送邮件通知。"""
@@ -140,6 +152,26 @@ class Notifier:
             logger.info("Telegram消息发送成功")
         except requests.RequestException as e:
             logger.error("Telegram消息发送失败: %s", str(e))
+        
+    def send_feishu(self, message):
+        """通过飞书发送通知。"""
+        if not self.feishu_config:
+            raise ValueError("飞书配置未设置")
+
+        url = f"https://open.feishu.cn/open-apis/bot/v2/hook/{self.feishu_config['bot_token']}"
+        payload = {
+            'msg_type': 'text',
+            'content': {
+                'text': message
+            }
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            logger.info("飞书消息发送成功")
+        except requests.RequestException as e:
+            logger.error("飞书消息发送失败: %s", str(e))
 
     def send_notification(self, message, subject=None):
         """发送通知，根据配置选择发送方式。"""
@@ -148,6 +180,8 @@ class Notifier:
             self.send_smtp(subject or "通知", message, to_email)
         if self.telegram_config:
             self.send_telegram(message)
+        if self.feishu_config:
+            self.send_feishu(message)
 
 
 class LocalStorageManager:
@@ -471,11 +505,6 @@ class MTeamSpider:
 
         logger.info('定时签到任务开始...')
 
-        self.notifier.send_notification(
-            message='定时签到任务开始',
-            subject="[MT-AutoCheckIn] 定时签到任务开始"
-        )
-
         # 生成9:00到12:00之间的随机时间
         random_hour = random.randint(9, 11)
         random_minute = random.randint(0, 59)
@@ -489,6 +518,10 @@ class MTeamSpider:
         schedule.every().day.at(random_time).do(run_check_in)
 
         logger.info("已设置每天 %s 进行签到", random_time)
+        self.notifier.send_notification(
+            message=f'M-Team 定时签到任务开始 \n将在每天 {random_time} 自动进行签到',
+            subject="[MT-AutoCheckIn] 定时签到任务开始"
+        )
 
         # 每小时执行一次心跳
         def heartbeat():

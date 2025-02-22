@@ -8,7 +8,7 @@
 - 支持LocalStorage保存及复用；
 - 使用Schedule执行定时任务；
 - 默认每天执行一次任务，执行时间做了随机化处理；
-- 支持SMTP/Telegram通知；
+- 支持SMTP/Telegram/飞书通知；
 
 ## 准备工作
 
