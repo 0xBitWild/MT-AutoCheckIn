@@ -351,7 +351,7 @@ class MTeamSpider:
 
             # 登录状态检查
             is_logged_in = (
-                page.url == 'https://kp.m-team.cc/index' and
+                page.url == 'https://zp.m-team.io/index' and
                 self.profile_json and
                 self.profile_json.get('data') and
                 self.profile_json.get('data').get('username') == self.username  # type: ignore
@@ -386,9 +386,9 @@ class MTeamSpider:
 
         try:
 
-            if page.url != 'https://kp.m-team.cc/login':
+            if page.url != 'https://zp.m-team.io/login':
                 # 访问登录页
-                await page.goto('https://kp.m-team.cc/login', timeout=60000)  # 60秒超时
+                await page.goto('https://zp.m-team.io/login', timeout=60000)  # 60秒超时
 
             # 等待页面加载完成
             await page.wait_for_load_state('networkidle', timeout=60000)  # 60秒超时
@@ -419,7 +419,7 @@ class MTeamSpider:
 
             # 登录状态检查
             is_logged_in = (
-                page.url == 'https://kp.m-team.cc/index' and
+                page.url == 'https://zp.m-team.io/index' and
                 self.profile_json and
                 self.profile_json.get('data') and
                 self.profile_json.get('data').get('username') == self.username  # type: ignore
@@ -465,7 +465,7 @@ class MTeamSpider:
             logger.info("请求拦截设置完成")
 
             # 访问主页
-            await page.goto('https://kp.m-team.cc/', timeout=60000)
+            await page.goto('https://zp.m-team.io/', timeout=60000)
             await page.wait_for_load_state('networkidle', timeout=60000)
 
             # 初始化LocalStorage管理器
