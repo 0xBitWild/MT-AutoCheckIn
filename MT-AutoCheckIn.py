@@ -47,6 +47,7 @@ class Notifier:
     def __init__(self):
         self.smtp_config = None
         self.telegram_config = None
+        self.feishu_config = None
 
         self._configure()
 
@@ -97,7 +98,7 @@ class Notifier:
             'bot_token': os.environ.get('TELEGRAM_BOT_TOKEN'),
             'chat_id': os.environ.get('TELEGRAM_CHAT_ID')
         }
-        
+
     def _configure_feishu(self):
         """配置飞书机器人信息。"""
 
@@ -106,7 +107,6 @@ class Notifier:
         self.feishu_config = {
             'bot_token': os.environ.get('FEISHU_BOT_TOKEN')
         }
-        
 
     def send_smtp(self, subject, message, to_email):
         """通过SMTP发送邮件通知。"""
@@ -152,7 +152,7 @@ class Notifier:
             logger.info("Telegram消息发送成功")
         except requests.RequestException as e:
             logger.error("Telegram消息发送失败: %s", str(e))
-        
+
     def send_feishu(self, message):
         """通过飞书发送通知。"""
         if not self.feishu_config:
