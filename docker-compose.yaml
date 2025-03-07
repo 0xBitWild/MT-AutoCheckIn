@@ -31,8 +31,11 @@ services:
       - TELEGRAM_BOT_TOKEN=your_telegram_bot_token
       - TELEGRAM_CHAT_ID=your_telegram_chat_id
 
+      # 飞书 通知
+      - FEISHU_BOT_TOKEN=your_feishu_bot_token
+
       # 通知类型
-      - NOTIFY_TYPE=smtp # smtp, telegram, none
+      - NOTIFY_TYPE=smtp # smtp, telegram, feishu, none
       - NOTIFY_EMAIL=your_notify_email
 
     command:   ["sh", "-c", "python MT-AutoCheckIn.py"]
