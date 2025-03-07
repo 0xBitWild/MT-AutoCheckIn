@@ -43,6 +43,8 @@ spec:
           value: your_telegram_bot_token
         - name: TELEGRAM_CHAT_ID
           value: your_telegram_chat_id
+        - name: FEISHU_BOT_TOKEN
+          value: your_feishu_bot_token
         - name: NOTIFY_TYPE
           value: smtp
         - name: NOTIFY_EMAIL
