@@ -401,11 +401,11 @@ class MTeamSpider:
 
             try:
                 # 等待2FA页面加载完成
-                await page.locator('input[id="otpCode"]').wait_for(timeout=60000)
+                await page.locator('input[id="otp-code"]').wait_for(timeout=60000)
 
                 # 获取并输入2FA验证码
                 captcha_code = self._get_captcha_code()
-                await page.locator('input[id="otpCode"]').fill(captcha_code)
+                await page.locator('input[id="otp-code"]').fill(captcha_code)
                 await page.locator('button[type="submit"]').click()
 
                 # 等待页面加载完成
