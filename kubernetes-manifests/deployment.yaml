@@ -25,12 +25,24 @@ spec:
         env:
         - name: TZ
           value: Asia/Shanghai
-        - name: MTEAM_USERNAME
-          value: your_mteam_username
-        - name: MTEAM_PASSWORD
-          value: your_mteam_password
-        - name: MTEAM_TOTP_SECRET
-          value: your_mteam_totp_secret
+        # M-Team 账号信息 (示例：配置两个账户)
+        - name: MTEAM_USERNAME_1
+          value: user1
+        - name: MTEAM_PASSWORD_1
+          value: pass1
+        - name: MTEAM_TOTP_SECRET_1
+          value: totp1
+        - name: NOTIFY_EMAIL_1
+          value: user1@example.com
+        - name: MTEAM_USERNAME_2
+          value: user2
+        - name: MTEAM_PASSWORD_2
+          value: pass2
+        - name: MTEAM_TOTP_SECRET_2
+          value: totp2
+        - name: NOTIFY_EMAIL_2
+          value: user2@example.com
+        # SMTP 邮件通知
         - name: SMTP_HOST
           value: your_smtp_host
         - name: SMTP_PORT
@@ -39,16 +51,17 @@ spec:
           value: your_smtp_username
         - name: SMTP_PASSWORD
           value: your_smtp_password
+        # Telegram 通知
         - name: TELEGRAM_BOT_TOKEN
           value: your_telegram_bot_token
         - name: TELEGRAM_CHAT_ID
           value: your_telegram_chat_id
+        # Feishu 通知
         - name: FEISHU_BOT_TOKEN
           value: your_feishu_bot_token
+        # 通知类型
         - name: NOTIFY_TYPE
           value: smtp
-        - name: NOTIFY_EMAIL
-          value: your_notify_email
         command: ["sh", "-c", "python MT-AutoCheckIn.py"]
         livenessProbe:
           exec:

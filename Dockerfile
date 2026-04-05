@@ -1,7 +1,5 @@
 # 基础镜像
-FROM python:3.12.7-bookworm as base
-
-ARG BUILD_DATE
+FROM python:3.14-bookworm AS base
 
 # 更新apt包管理器并安装必要的依赖
 RUN apt update -y && \
@@ -26,8 +24,7 @@ RUN playwright install chromium && \
 
 FROM base
 
-LABEL maintainer="0xBitwild" \
-      build_date=${BUILD_DATE}
+LABEL maintainer="0xBitwild"
 
 # 设置工作目录
 WORKDIR /app

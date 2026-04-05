@@ -7,6 +7,7 @@ import random
 import logging
 import smtplib
 import asyncio
+import re
 from typing import Any
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -20,7 +21,7 @@ from playwright.async_api import async_playwright, Page
 from playwright.async_api import (TimeoutError as PlaywrightTimeoutError,
                                   Error as PlaywrightError)
 
-# 配置日是记录器
+# 配置日志记录器
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(filename)s - %(lineno)d - %(name)s - %(levelname)s - %(message)s',
@@ -42,7 +43,7 @@ class PasswordLoginError(Exception):
 
 
 class Notifier:
-    """通知发送类，支持多种通知方式。"""
+    """通知发送类，支持多种通知方式（全局共享）。"""
 
     def __init__(self):
         self.smtp_config = None
@@ -128,7 +129,6 @@ class Notifier:
                     self.smtp_config['username'],
                     self.smtp_config['password']
                     )
-                # logger.info("SMTP登录成功")
                 server.send_message(msg)
                 logger.info("SMTP邮件发送成功")
                 server.quit()
@@ -173,9 +173,8 @@ class Notifier:
         except requests.RequestException as e:
             logger.error("飞书消息发送失败: %s", str(e))
 
-    def send_notification(self, message, subject=None):
+    def send_notification(self, message, subject=None, to_email=None):
         """发送通知，根据配置选择发送方式。"""
-        to_email = os.environ.get('NOTIFY_EMAIL')
         if self.smtp_config and to_email:
             self.send_smtp(subject or "通知", message, to_email)
         if self.telegram_config:
@@ -246,26 +245,22 @@ class LocalStorageManager:
 class MTeamSpider:
     """M-Team 自动签到爬虫类。"""
 
-    def __init__(self) -> None:
+    def __init__(self, username: str, password: str, totp_secret: str,
+                 notify_email: str, notifier: Notifier) -> None:
 
-        self.localstorage_file: Path = Path(__file__).parent / 'mteam_localstorage.json'
-        self.username: str = os.environ.get('MTEAM_USERNAME', '')
-        self.password: str = os.environ.get('MTEAM_PASSWORD', '')
-        self.totp_secret: str = os.environ.get('MTEAM_TOTP_SECRET', '')
+        safe_name = re.sub(r'[^\w\-]', '_', username)
+        self.localstorage_file: Path = Path(__file__).parent / f'mteam_localstorage_{safe_name}.json'
+        self.username: str = username
+        self.password: str = password
+        self.totp_secret: str = totp_secret
+        self.notify_email: str = notify_email
 
         self.profile_api_endpoint: str = '/api/member/profile'
         self.profile_json: dict[str, Any] = {}
 
         self.notify_subject_prefix: str = '[MT-AutoCheckIn] '
 
-        if not all([self.username,
-                    self.password,
-                    self.totp_secret]):
-            raise ValueError(
-                "请设置所有必要的环境变量：MTEAM_USERNAME, MTEAM_PASSWORD, MTEAM_TOTP_SECRET"
-                )
-
-        self.notifier: Notifier = Notifier()
+        self.notifier: Notifier = notifier
 
     def _get_captcha_code(self) -> str:
 
@@ -315,18 +310,17 @@ class MTeamSpider:
     async def intercept_profile_request(self, route, request):
         """拦截请求并处理API响应。"""
 
-        logger.info("拦截到请求: %s", request.url)
+        logger.info("[%s] 拦截到请求: %s", self.username, request.url)
 
         if request.url.endswith(self.profile_api_endpoint):
-            logger.info("成功匹配到目标请求: %s", request.url)
+            logger.info("[%s] 成功匹配到目标请求: %s", self.username, request.url)
             try:
                 response = await route.fetch()
                 json_data = await response.json()
                 self.profile_json = json_data
-                # logger.info("获取到的响应数据: %s", self.profile_json)
                 await route.continue_()
             except (json.JSONDecodeError, PlaywrightError) as e:
-                logger.warning("获取API数据时出错: %s", e)
+                logger.warning("[%s] 获取API数据时出错: %s", self.username, e)
         else:
             await route.continue_()
 
@@ -336,20 +330,16 @@ class MTeamSpider:
                                     ) -> None:
         """使用保存的 LocalStorage 数据尝试登录 M-Team。"""
 
-        logger.info('开始通过LocalStorage登录')
+        logger.info('[%s] 开始通过LocalStorage登录', self.username)
 
         try:
-            # 加载LocalStorage
             await local_storage_manager.load_from_file(str(self.localstorage_file))
 
-            # 刷新页面
             await page.reload(timeout=60000)
 
-            # 等待页面加载完成
             await page.wait_for_load_state('networkidle', timeout=60000)
             await page.wait_for_timeout(timeout=60000)
 
-            # 登录状态检查
             is_logged_in = (
                 page.url == 'https://zp.m-team.io/index' and
                 self.profile_json and
@@ -359,22 +349,22 @@ class MTeamSpider:
 
             if is_logged_in:
 
-                logger.info('通过LocalStorage登录成功')
+                logger.info('[%s] 通过LocalStorage登录成功', self.username)
                 self.notifier.send_notification(
-                    message=f'通过LocalStorage登录成功\n\n{self._parse_profile_json()}',
-                    subject=f'{self.notify_subject_prefix}登录成功'
+                    message=f'[{self.username}] 通过LocalStorage登录成功\n\n{self._parse_profile_json()}',
+                    subject=f'{self.notify_subject_prefix}[{self.username}] 登录成功',
+                    to_email=self.notify_email
                     )
 
-                # 保存localstorage到文件
                 await local_storage_manager.save_to_file(str(self.localstorage_file))
-                logger.info('已保存更新LocalStorage到文件')
+                logger.info('[%s] 已保存更新LocalStorage到文件', self.username)
                 return
 
-            logger.warning('通过LocalStorage登录失败')
+            logger.warning('[%s] 通过LocalStorage登录失败', self.username)
             raise LocalStorageLoginError('通过LocalStorage登录失败')
 
         except PlaywrightError as e:
-            logger.error('通过LocalStorage登录时发生错误: %s', str(e))
+            logger.error('[%s] 通过LocalStorage登录时发生错误: %s', self.username, str(e))
 
     async def login_by_password(self,
                                 page: Page,
@@ -382,42 +372,48 @@ class MTeamSpider:
                                 ) -> None:
         """使用用户名和密码登录 M-Team。"""
 
-        logger.info('开始通过用户名密码登录')
+        logger.info('[%s] 开始通过用户名密码登录', self.username)
 
         try:
 
             if page.url != 'https://zp.m-team.io/login':
-                # 访问登录页
-                await page.goto('https://zp.m-team.io/login', timeout=60000)  # 60秒超时
+                await page.goto('https://zp.m-team.io/login', timeout=60000)
 
-            # 等待页面加载完成
-            await page.wait_for_load_state('networkidle', timeout=60000)  # 60秒超时
+            await page.wait_for_load_state('networkidle', timeout=60000)
 
-            # 输入用户名/密码
             await page.locator('button[type="submit"]').wait_for(timeout=60000)
             await page.locator('input[id="username"]').fill(self.username)
             await page.locator('input[id="password"]').fill(self.password)
             await page.locator('button[type="submit"]').click()
 
             try:
-                # 等待2FA页面加载完成
-                await page.locator('input[id="otpCode"]').wait_for(timeout=60000)
-
-                # 获取并输入2FA验证码
-                captcha_code = self._get_captcha_code()
-                await page.locator('input[id="otpCode"]').fill(captcha_code)
-                await page.locator('button[type="submit"]').click()
-
-                # 等待页面加载完成
-                await page.wait_for_load_state('networkidle', timeout=60000)  # 60秒超时
-                await page.wait_for_timeout(timeout=60000)
+                # 等待页面跳转或2FA元素出现
+                try:
+                    await page.wait_for_url('https://zp.m-team.io/index', timeout=15000)
+                    logger.info('[%s] 登录直接成功，无需2FA', self.username)
+                except PlaywrightTimeoutError:
+                    # 检查是否有2FA输入框
+                    otp_input = page.locator('input[id="otp-code"]')
+                    if await otp_input.count() > 0 and await otp_input.is_visible():
+                        captcha_code = self._get_captcha_code()
+                        await otp_input.fill(captcha_code)
+                        await page.locator('button[type="submit"]').click()
+                        await page.wait_for_url('https://zp.m-team.io/index', timeout=30000)
+                    else:
+                        # 尝试点击确认按钮（新版2FA流程）
+                        confirm_btn = page.locator('button:has-text("確認")')
+                        if await confirm_btn.count() > 0:
+                            await confirm_btn.click()
+                            await page.wait_for_url('https://zp.m-team.io/index', timeout=30000)
+                        else:
+                            logger.warning('[%s] 未找到2FA元素，等待页面跳转', self.username)
+                            await page.wait_for_timeout(5000)
 
             except PlaywrightTimeoutError as e:
-                logger.warning('处理2FA时发生超时错误: %s', str(e))
+                logger.warning('[%s] 处理2FA时发生超时错误: %s', self.username, str(e))
             except PlaywrightError as e:
-                logger.warning('处理2FA时发生Playwright错误: %s', str(e))
+                logger.warning('[%s] 处理2FA时发生Playwright错误: %s', self.username, str(e))
 
-            # 登录状态检查
             is_logged_in = (
                 page.url == 'https://zp.m-team.io/index' and
                 self.profile_json and
@@ -427,74 +423,69 @@ class MTeamSpider:
 
             if is_logged_in:
 
-                logger.info('通过用户名密码登录成功')
+                logger.info('[%s] 通过用户名密码登录成功', self.username)
                 self.notifier.send_notification(
-                    message=f'通过用户名密码登录成功\n\n{self._parse_profile_json()}',
-                    subject=f'{self.notify_subject_prefix}登录成功'
+                    message=f'[{self.username}] 通过用户名密码登录成功\n\n{self._parse_profile_json()}',
+                    subject=f'{self.notify_subject_prefix}[{self.username}] 登录成功',
+                    to_email=self.notify_email
                     )
 
-                # 保存localstorage到文件
                 await local_storage_manager.save_to_file(str(self.localstorage_file))
-                logger.info('已保存LocalStorage到文件')
+                logger.info('[%s] 已保存LocalStorage到文件', self.username)
                 return
 
-            logger.warning('通过用户名密码登录失败')
+            logger.warning('[%s] 通过用户名密码登录失败', self.username)
             raise PasswordLoginError('通过用户名密码登录失败')
 
         except PlaywrightError as e:
-            logger.error('通过用户名密码登录时发生错误: %s', str(e))
+            logger.error('[%s] 通过用户名密码登录时发生错误: %s', self.username, str(e))
             raise PlaywrightError(f'通过用户名密码登录时发生错误: {str(e)}') from e
 
     async def check_in(self):
         """执行M-Team自动签到流程。"""
-        logger.info("开始执行签到流程")
+        logger.info("[%s] 开始执行签到流程", self.username)
 
-        # 随机等待10到300秒
         random_delay = random.randint(10, 300)
-        logger.info("等待 %s 秒后开始签到", random_delay)
+        logger.info("[%s] 等待 %s 秒后开始签到", self.username, random_delay)
         time.sleep(random_delay)
 
         async with async_playwright() as playwright:
 
-            # 启动浏览器
             browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page()
 
-            # 设置请求拦截
             await page.route(f"**{self.profile_api_endpoint}", self.intercept_profile_request)
-            logger.info("请求拦截设置完成")
+            logger.info("[%s] 请求拦截设置完成", self.username)
 
-            # 访问主页
             await page.goto('https://zp.m-team.io/', timeout=60000)
             await page.wait_for_load_state('networkidle', timeout=60000)
 
-            # 初始化LocalStorage管理器
             local_storage_manager = LocalStorageManager(page)
 
             try:
                 try:
-                    # 尝试通过LocalStorage登录
                     await self.login_by_localstorage(page, local_storage_manager)
                 except LocalStorageLoginError:
-                    # 尝试通过用户名密码登录
-                    logger.warning('通过LocalStorage登录失败，尝试通过用户名密码登录')
+                    logger.warning('[%s] 通过LocalStorage登录失败，尝试通过用户名密码登录', self.username)
                     try:
                         await self.login_by_password(page, local_storage_manager)
                     except PasswordLoginError:
-                        logger.error('通过用户名密码登录失败，即将发送通知')
+                        logger.error('[%s] 通过用户名密码登录失败，即将发送通知', self.username)
                         self.notifier.send_notification(
-                            message='通过用户名密码登录失败',
-                            subject=f'{self.notify_subject_prefix}登录失败'
+                            message=f'[{self.username}] 通过用户名密码登录失败',
+                            subject=f'{self.notify_subject_prefix}[{self.username}] 登录失败',
+                            to_email=self.notify_email
                         )
-                        raise  # 可选：向上传递异常
+                        raise
             except PlaywrightError as e:
-                logger.error('签到时发生Playwright错误: %s', str(e))
+                logger.error('[%s] 签到时发生Playwright错误: %s', self.username, str(e))
                 self.notifier.send_notification(
-                    message=f'签到时发生Playwright错误: {str(e)}',
-                    subject=f'{self.notify_subject_prefix}登录失败'
+                    message=f'[{self.username}] 签到时发生Playwright错误: {str(e)}',
+                    subject=f'{self.notify_subject_prefix}[{self.username}] 登录失败',
+                    to_email=self.notify_email
                 )
             except KeyboardInterrupt:
-                logger.info('用户终止运行')
+                logger.info('[%s] 用户终止运行', self.username)
             finally:
                 await page.unroute(f"**{self.profile_api_endpoint}")
                 await page.close()
@@ -503,38 +494,93 @@ class MTeamSpider:
     def schedule_check_in(self):
         """定时签到。"""
 
-        logger.info('定时签到任务开始...')
+        logger.info('[%s] 定时签到任务开始...', self.username)
 
-        # 生成9:00到12:00之间的随机时间
         random_hour = random.randint(9, 11)
         random_minute = random.randint(0, 59)
         random_time = f"{random_hour:02d}:{random_minute:02d}"
 
-        # 包装异步调用
         def run_check_in():
             asyncio.run(self.check_in())
 
-        # 每天在生成的随机时间签到
         schedule.every().day.at(random_time).do(run_check_in)
 
-        logger.info("已设置每天 %s 进行签到", random_time)
+        logger.info("[%s] 已设置每天 %s 进行签到", self.username, random_time)
         self.notifier.send_notification(
-            message=f'M-Team 定时签到任务开始 \n将在每天 {random_time} 自动进行签到',
-            subject="[MT-AutoCheckIn] 定时签到任务开始"
+            message=f'[{self.username}] M-Team 定时签到任务开始 \n将在每天 {random_time} 自动进行签到',
+            subject=f"[MT-AutoCheckIn] [{self.username}] 定时签到任务开始",
+            to_email=self.notify_email
         )
 
-        # 每小时执行一次心跳
-        def heartbeat():
-            logger.info('定时签到任务正在运行...')
 
-        schedule.every().hour.do(heartbeat)
+def load_accounts() -> list[dict[str, str]]:
+    """从环境变量加载所有账户配置。
 
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
+    仅支持多账户格式:
+      MTEAM_USERNAME_1 / MTEAM_PASSWORD_1 / MTEAM_TOTP_SECRET_1 / NOTIFY_EMAIL_1
+      MTEAM_USERNAME_2 / MTEAM_PASSWORD_2 / MTEAM_TOTP_SECRET_2 / NOTIFY_EMAIL_2
+      ...
+    """
+    accounts = []
+
+    i = 1
+    while True:
+        username = os.environ.get(f'MTEAM_USERNAME_{i}')
+        if not username:
+            break
+        password = os.environ.get(f'MTEAM_PASSWORD_{i}', '')
+        totp_secret = os.environ.get(f'MTEAM_TOTP_SECRET_{i}', '')
+        notify_email = os.environ.get(f'NOTIFY_EMAIL_{i}', '')
+        if not all([username, password, totp_secret]):
+            logger.warning("账户 %d 配置不完整，跳过 (username=%s)", i, username)
+            i += 1
+            continue
+        accounts.append({
+            'username': username,
+            'password': password,
+            'totp_secret': totp_secret,
+            'notify_email': notify_email
+        })
+        i += 1
+
+    return accounts
+
+
+def schedule_check_in():
+    """定时签到（支持多账户）。"""
+
+    accounts = load_accounts()
+    if not accounts:
+        logger.error("未找到任何账户配置，请设置 MTEAM_USERNAME_1 / MTEAM_PASSWORD_1 / MTEAM_TOTP_SECRET_1 / NOTIFY_EMAIL_1")
+        return
+
+    notifier = Notifier()
+    spiders: list[MTeamSpider] = []
+
+    for acct in accounts:
+        spider = MTeamSpider(
+            username=acct['username'],
+            password=acct['password'],
+            totp_secret=acct['totp_secret'],
+            notify_email=acct['notify_email'],
+            notifier=notifier,
+        )
+        spiders.append(spider)
+        spider.schedule_check_in()
+
+    logger.info("共加载 %d 个账户", len(spiders))
+
+    def heartbeat():
+        logger.info('定时签到任务正在运行... (%d 个账户)', len(spiders))
+
+    schedule.every().hour.do(heartbeat)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
 
 
 if __name__ == '__main__':
 
-    # asyncio.run(MTeamSpider().check_in())
-    MTeamSpider().schedule_check_in()
+    # asyncio.run(MTeamSpider(...).check_in())  # 单账户手动测试
+    schedule_check_in()

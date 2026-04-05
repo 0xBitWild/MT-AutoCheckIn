@@ -6,8 +6,6 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
-      args:
-        BUILD_DATE: ${BUILD_DATE}
 
     restart: always
     volumes:
@@ -16,10 +14,16 @@ services:
     environment:
       - TZ=Asia/Shanghai
 
-      # M-Team 账号信息
-      - MTEAM_USERNAME=your_mteam_username
-      - MTEAM_PASSWORD=your_mteam_password
-      - MTEAM_TOTP_SECRET=your_mteam_totp_secret  
+      # M-Team 账号信息 (示例：配置两个账户)
+      - MTEAM_USERNAME_1=user1
+      - MTEAM_PASSWORD_1=pass1
+      - MTEAM_TOTP_SECRET_1=totp1
+      - NOTIFY_EMAIL_1=user1@example.com
+
+      - MTEAM_USERNAME_2=user2
+      - MTEAM_PASSWORD_2=pass2
+      - MTEAM_TOTP_SECRET_2=totp2
+      - NOTIFY_EMAIL_2=user2@example.com
 
       # SMTP 邮件通知
       - SMTP_HOST=your_smtp_host
@@ -36,7 +40,6 @@ services:
 
       # 通知类型
       - NOTIFY_TYPE=smtp # smtp, telegram, feishu, none
-      - NOTIFY_EMAIL=your_notify_email
 
     command:   ["sh", "-c", "python MT-AutoCheckIn.py"]
     healthcheck:

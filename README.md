@@ -92,24 +92,32 @@ docker compose up -d
 在 `.env` 文件中配置以下环境变量：
 
 ```ini
-# 必需配置
-MT_USERNAME=你的用户名
-MT_PASSWORD=你的密码
-MT_TOTP_SECRET=你的TOTP密钥
+# M-Team 账号信息（使用数字后缀支持多账户）
+MTEAM_USERNAME_1=你的用户名1
+MTEAM_PASSWORD_1=你的密码1
+MTEAM_TOTP_SECRET_1=你的TOTP密钥1
+NOTIFY_EMAIL_1=收件邮箱1@example.com
 
-# 可选配置 - 邮件通知
+MTEAM_USERNAME_2=你的用户名2
+MTEAM_PASSWORD_2=你的密码2
+MTEAM_TOTP_SECRET_2=你的TOTP密钥2
+NOTIFY_EMAIL_2=收件邮箱2@example.com
+
+# SMTP 邮件通知
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@example.com
 SMTP_PASSWORD=your-password
-SMTP_TO=receiver@example.com
 
-# 可选配置 - Telegram通知
-TG_BOT_TOKEN=your-bot-token
-TG_CHAT_ID=your-chat-id
+# Telegram 通知
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_CHAT_ID=your-chat-id
 
-# 可选配置 - 飞书通知
-FEISHU_WEBHOOK=your-webhook-url
+# 飞书通知
+FEISHU_BOT_TOKEN=your-webhook-url
+
+# 通知类型: smtp, telegram, feishu, none
+NOTIFY_TYPE=smtp
 ```
 
 ## 📅 定时任务

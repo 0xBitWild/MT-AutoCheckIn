@@ -1,12 +1,41 @@
+# IDE
 .idea
 .vscode
-.env
+
+# Python
 .venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.mypy_cache
+.pytest_cache
+
+# Env & config
+.env
+.env.template
 .flake8
 .python-version
 
+# Git
+.git
+.gitignore
+
+# Docs & meta
+README.md
+LICENSE
+AGENTS.md
+.dockerignore
+
+# Logs & data
 *.log
 *.json
 
+# Debug artifacts
+debug_*.png
+after_login.png
+*.screenshot.png
+
+# Dev compose / k8s manifests
 docker-compose.dev.yml
 kubernetes-manifests/deployment.dev.yaml
